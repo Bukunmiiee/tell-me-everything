@@ -95,13 +95,18 @@ export default async function AdminDashboardPage() {
       </p>
 
       {/* Metrics row (Item 9) */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
         <MetricCard label="Total" value={total} />
         <MetricCard label="Pending" value={pending} />
         <MetricCard label="Approved" value={approved} />
         <MetricCard label="Rejected" value={rejected} />
         <MetricCard label="Avg. Score" value={avgScore} />
       </div>
+
+      <p className="text-[12px] text-ink-soft italic mb-8">
+        Decisions are always available on each applicant&apos;s private status page.
+        Email notifications are optional and may be unavailable depending on email configuration.
+      </p>
 
       {applicants.length === 0 ? (
         <EmptyState message="No one's answered yet. Once you send your first link, they'll appear here." />

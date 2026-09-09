@@ -27,12 +27,14 @@ export function DecisionPanel({
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<DecisionChoice | null>(initialChoice);
+  // Email is a secondary, optional channel — the status page is the source
+  // of truth, so the toggle now defaults OFF rather than on.
   const [sendEmail, setSendEmail] = useState(false);
   const [subject, setSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmed, setConfirmed] = useState<{ emailSent: boolean; emailError: string | null } | null>(
+  const [confirmed, setConfirmed] = useState<{ emailSent: boolean; emailAttempted: boolean; emailError: string | null } | null>(
     null
   );
   const [awaitingFinalConfirm, setAwaitingFinalConfirm] = useState(false);
@@ -44,8 +46,7 @@ export function DecisionPanel({
     const template = getEmailTemplate(choice, { name: applicantName });
     setSubject(template.subject);
     setEmailBody(template.body);
-    // Default the toggle on only if they gave an email — no point offering it otherwise.
-    setSendEmail(Boolean(applicantEmail));
+    setSendEmail(false);
   }
 
   async function handleConfirm() {
@@ -61,6 +62,8 @@ export function DecisionPanel({
     setSubmitting(true);
     setError(null);
 
+    const emailAttempted = sendEmail && Boolean(applicantEmail);
+
     try {
       const res = await fetch("/api/decisions", {
         method: "POST",
@@ -68,7 +71,7 @@ export function DecisionPanel({
         body: JSON.stringify({
           application_id: applicationId,
           choice: selected,
-          send_email: sendEmail && Boolean(applicantEmail),
+          send_email: emailAttempted,
           email_subject: subject,
           email_body: emailBody,
         }),
@@ -77,12 +80,20 @@ export function DecisionPanel({
       const data = await res.json();
 
       if (!res.ok) {
+        // The decision itself might still have failed to save here — but
+        // this branch only fires on a genuine server error, not an email
+        // failure, which is handled separately below and never blocks
+        // the decision from saving.
         setError("Couldn't save that decision. Please try again.");
         setSubmitting(false);
         return;
       }
 
-      setConfirmed({ emailSent: data.emailSent, emailError: data.emailError ?? null });
+      setConfirmed({
+        emailSent: data.emailSent,
+        emailAttempted,
+        emailError: data.emailError ?? null,
+      });
       setAwaitingFinalConfirm(false);
       router.refresh();
     } catch {
@@ -99,7 +110,8 @@ export function DecisionPanel({
         <StatusBadge status={currentStatus} />
       </div>
       <p className="text-[13px] text-ink-soft mb-5">
-        Take your time with this one — it updates their status right away.
+        Their private status page always reflects this decision immediately.
+        Email is optional and secondary — it may not always be deliverable.
       </p>
 
       {initialChoice && (
@@ -116,7 +128,7 @@ export function DecisionPanel({
                 day: "numeric",
                 year: "numeric",
               })}
-              {initialEmailSent ? " · Email sent" : " · No email sent"}
+              {initialEmailSent ? " · Email sent" : " · Viewable on their status page"}
             </p>
           )}
         </div>
@@ -145,7 +157,7 @@ export function DecisionPanel({
 
       {selected && (
         <div className="border-t border-taupe-line pt-5 mb-5">
-          <label className="flex items-center gap-2 text-[14px] text-ink mb-4">
+          <label className="flex items-center gap-2 text-[14px] text-ink mb-1.5">
             <input
               type="checkbox"
               checked={sendEmail}
@@ -153,13 +165,17 @@ export function DecisionPanel({
               onChange={(e) => setSendEmail(e.target.checked)}
               className="h-4 w-4 accent-wine-primary"
             />
-            Send them an update
+            Also send an email (optional)
             {!applicantEmail && (
               <span className="text-[12px] text-ink-soft italic">
                 (no email address on file)
               </span>
             )}
           </label>
+          <p className="text-[12px] text-ink-soft italic mb-4">
+            They can always see this decision on their private status page,
+            whether or not this email sends successfully.
+          </p>
           {awaitingFinalConfirm && (
             <p className="text-[12px] text-ink-soft italic mb-3">
               Editing details will reset the confirmation step.
@@ -195,21 +211,26 @@ export function DecisionPanel({
       )}
 
       {error && <p className="text-[13px] italic text-wine-primary mb-3">{error}</p>}
+
       {confirmed && (
-        <p className="text-[13px] text-success-sage mb-3">
-          Decision saved{confirmed.emailSent ? " and email sent." : "."}
-          {sendEmail && applicantEmail && !confirmed.emailSent && (
-            <span className="block text-wine-primary italic">
-              Email did not send{confirmed.emailError ? `: ${confirmed.emailError}` : "."}
-            </span>
+        <div className="mb-3 rounded-lg bg-[#7A8B6F1a] px-4 py-3">
+          <p className="text-[13px] text-success-sage">
+            Decision saved. They can view this anytime on their private status page.
+          </p>
+          {confirmed.emailAttempted && (
+            <p className={`text-[12px] mt-1 ${confirmed.emailSent ? "text-success-sage" : "text-ink-soft italic"}`}>
+              {confirmed.emailSent
+                ? "The email also sent successfully."
+                : `The optional email didn't go out${confirmed.emailError ? ` (${confirmed.emailError})` : ""} — this doesn't affect the decision above, which is already saved and visible to them.`}
+            </p>
           )}
-        </p>
+        </div>
       )}
 
       {awaitingFinalConfirm && selected && (
         <p className="text-[13px] text-wine-primary mb-3">
-          Are you sure? This will update their status
-          {sendEmail && applicantEmail ? " and send them the email above." : "."}
+          Are you sure? This will update their status page right away
+          {sendEmail && applicantEmail ? ", and attempt to send the email above." : "."}
         </p>
       )}
 
