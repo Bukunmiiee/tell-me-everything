@@ -13,24 +13,34 @@ export function DecisionPanel({
   currentStatus,
   applicantName,
   applicantEmail,
+  initialChoice,
+  initialEmailSent,
+  initialDecidedAt,
 }: {
   applicationId: string;
   currentStatus: ApplicationStatus;
   applicantName: string;
   applicantEmail: string | null;
+  initialChoice: DecisionChoice | null;
+  initialEmailSent: boolean;
+  initialDecidedAt: string | null;
 }) {
   const router = useRouter();
-  const [selected, setSelected] = useState<DecisionChoice | null>(null);
+  const [selected, setSelected] = useState<DecisionChoice | null>(initialChoice);
   const [sendEmail, setSendEmail] = useState(false);
   const [subject, setSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmed, setConfirmed] = useState<{ emailSent: boolean } | null>(null);
+  const [confirmed, setConfirmed] = useState<{ emailSent: boolean; emailError: string | null } | null>(
+    null
+  );
+  const [awaitingFinalConfirm, setAwaitingFinalConfirm] = useState(false);
 
   function handleSelect(choice: DecisionChoice) {
     setSelected(choice);
     setConfirmed(null);
+    setAwaitingFinalConfirm(false);
     const template = getEmailTemplate(choice, { name: applicantName });
     setSubject(template.subject);
     setEmailBody(template.body);
@@ -40,6 +50,14 @@ export function DecisionPanel({
 
   async function handleConfirm() {
     if (!selected) return;
+
+    // Two-step confirmation (Item 7) — the first click just asks "are you
+    // sure"; nothing is saved until the second click.
+    if (!awaitingFinalConfirm) {
+      setAwaitingFinalConfirm(true);
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
 
@@ -64,7 +82,8 @@ export function DecisionPanel({
         return;
       }
 
-      setConfirmed({ emailSent: data.emailSent });
+      setConfirmed({ emailSent: data.emailSent, emailError: data.emailError ?? null });
+      setAwaitingFinalConfirm(false);
       router.refresh();
     } catch {
       setError("Couldn't reach the server. Please try again.");
@@ -82,6 +101,26 @@ export function DecisionPanel({
       <p className="text-[13px] text-ink-soft mb-5">
         Take your time with this one — it updates their status right away.
       </p>
+
+      {initialChoice && (
+        <div className="mb-5 bg-cream-alt rounded-lg px-4 py-3">
+          <p className="text-[13px] text-ink">
+            Last decision: <span className="font-medium">
+              {DECISION_OPTIONS.find((o) => o.value === initialChoice)?.label}
+            </span>
+          </p>
+          {initialDecidedAt && (
+            <p className="text-[12px] text-ink-soft">
+              {new Date(initialDecidedAt).toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+              {initialEmailSent ? " · Email sent" : " · No email sent"}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="space-y-2 mb-5">
         {DECISION_OPTIONS.map((opt) => {
@@ -121,6 +160,11 @@ export function DecisionPanel({
               </span>
             )}
           </label>
+          {awaitingFinalConfirm && (
+            <p className="text-[12px] text-ink-soft italic mb-3">
+              Editing details will reset the confirmation step.
+            </p>
+          )}
 
           {sendEmail && applicantEmail && (
             <div className="space-y-3">
@@ -154,13 +198,35 @@ export function DecisionPanel({
       {confirmed && (
         <p className="text-[13px] text-success-sage mb-3">
           Decision saved{confirmed.emailSent ? " and email sent." : "."}
-          {sendEmail && applicantEmail && !confirmed.emailSent && " (Email did not send — check your Resend setup.)"}
+          {sendEmail && applicantEmail && !confirmed.emailSent && (
+            <span className="block text-wine-primary italic">
+              Email did not send{confirmed.emailError ? `: ${confirmed.emailError}` : "."}
+            </span>
+          )}
         </p>
       )}
 
-      <Button onClick={handleConfirm} disabled={!selected || submitting}>
-        {submitting ? "Saving…" : "Confirm Decision"}
-      </Button>
+      {awaitingFinalConfirm && selected && (
+        <p className="text-[13px] text-wine-primary mb-3">
+          Are you sure? This will update their status
+          {sendEmail && applicantEmail ? " and send them the email above." : "."}
+        </p>
+      )}
+
+      <div className="flex gap-3">
+        <Button onClick={handleConfirm} disabled={!selected || submitting}>
+          {submitting
+            ? "Saving…"
+            : awaitingFinalConfirm
+              ? "Yes, Confirm"
+              : "Confirm Decision"}
+        </Button>
+        {awaitingFinalConfirm && (
+          <Button variant="secondary" onClick={() => setAwaitingFinalConfirm(false)}>
+            Cancel
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

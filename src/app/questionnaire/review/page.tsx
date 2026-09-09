@@ -11,8 +11,9 @@ export default function ReviewAnswersPage() {
   const { answers, clearDraft, hydrated } = useDraftAnswers();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [duplicateWarning, setDuplicateWarning] = useState(false);
 
-  async function handleSubmit() {
+  async function submitAnswers(force: boolean) {
     setSubmitting(true);
     setError(null);
 
@@ -20,10 +21,16 @@ export default function ReviewAnswersPage() {
       const res = await fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers }),
+        body: JSON.stringify({ answers, force }),
       });
 
       const data = await res.json();
+
+      if (res.status === 409 && data.duplicate) {
+        setDuplicateWarning(true);
+        setSubmitting(false);
+        return;
+      }
 
       if (!res.ok) {
         setError(
@@ -35,8 +42,6 @@ export default function ReviewAnswersPage() {
         return;
       }
 
-      // Save the token locally so the confirmation page can show the status link,
-      // then clear the draft — the data now safely lives in the database.
       window.localStorage.setItem("tme_status_token", data.token);
       clearDraft();
       router.push("/questionnaire/submitted");
@@ -84,17 +89,35 @@ export default function ReviewAnswersPage() {
           ))}
         </div>
 
+        {duplicateWarning && (
+          <div className="mt-6 bg-blush-light border border-blush rounded-lg p-4">
+            <p className="text-[14px] text-ink mb-3">
+              It looks like this email has already been used for a submission. Submit again anyway?
+            </p>
+            <div className="flex gap-3">
+              <Button variant="secondary" onClick={() => setDuplicateWarning(false)}>
+                Go Back
+              </Button>
+              <Button onClick={() => submitAnswers(true)} disabled={submitting}>
+                {submitting ? "Sending…" : "Submit Anyway"}
+              </Button>
+            </div>
+          </div>
+        )}
+
         {error && (
           <p role="alert" className="mt-6 text-[14px] italic text-wine-primary">
             {error}
           </p>
         )}
 
-        <div className="mt-8 flex justify-end">
-          <Button onClick={handleSubmit} disabled={submitting}>
-            {submitting ? "Sending…" : "Submit"}
-          </Button>
-        </div>
+        {!duplicateWarning && (
+          <div className="mt-8 flex justify-end">
+            <Button onClick={() => submitAnswers(false)} disabled={submitting}>
+              {submitting ? "Sending…" : "Submit"}
+            </Button>
+          </div>
+        )}
       </div>
     </main>
   );
